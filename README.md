@@ -4,7 +4,6 @@ Welcome to **Project Superstar VIX**, a financial dashboard built with Streamlit
 
 ## 🚀 Deployment
 This application is designed to be hosted on **Streamlit Community Cloud**. 
-- **Demo Link:** [Coming Soon / Enter your URL here]
 
 ## 🛠 Features
 - **Real-time CVI Calculation:** Using a Recursive EWMA model ($\lambda=0.94$).
