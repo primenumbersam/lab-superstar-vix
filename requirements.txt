@@ -1,0 +1,9 @@
+streamlit
+finance-datareader
+yfinance
+pandas
+numpy
+scikit-learn
+plotly
+lxml
+beautifulsoup4

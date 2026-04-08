@@ -1,0 +1,16 @@
+# Virtual Environment
+.venv/
+__pycache__/
+*.py[cod]
+
+# State and Data
+state.db
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Streamlit config
+.streamlit/
+GEMINI.md
