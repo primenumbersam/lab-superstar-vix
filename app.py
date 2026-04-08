@@ -9,20 +9,28 @@ from ewma_model import calculate_returns, initialize_variance, update_ewma, comp
 # Page Layout configuration
 st.set_page_config(page_title="Superstar VIX", layout="wide")
 
-# Custom CSS to reduce top margin
+# Custom CSS to control layout and font sizes
 st.markdown("""
     <style>
         .block-container {
             padding-top: 1rem;
-            padding-bottom: 0rem;
         }
-        [data-testid="stHeader"] {
-            height: 3rem;
+        /* Customize st.title font size */
+        h1 {
+            font-size: 1.8rem !important;
+        }
+        /* Customize st.header font size */
+        h2 {
+            font-size: 1.6rem !important;
+        }
+        /* Optional: Customize st.subheader font size */
+        h3 {
+            font-size: 1.3rem !important;
         }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("Superstar VIX (Volatility Index)")
+st.title("Volatility Index of Superstar Firms")
 
 @st.cache_resource
 def get_state_manager():
@@ -81,7 +89,7 @@ def process_market(market_name, df_cvi, mcaps, current_vars, returns, prices, se
         range_y=[0, 100],
         labels={market_name: "CVI Index"}
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     
     # -----------------------------------
     # Supplemental Visualizations
@@ -122,7 +130,7 @@ def process_market(market_name, df_cvi, mcaps, current_vars, returns, prices, se
             color_continuous_scale="Blues",
             title="Sector & Market Cap Treemap"
         )
-        st.plotly_chart(fig_tree, use_container_width=True)
+        st.plotly_chart(fig_tree, width="stretch")
         
     with col2:
         # Scatterplot: Std Dev vs Mean Return
@@ -135,7 +143,7 @@ def process_market(market_name, df_cvi, mcaps, current_vars, returns, prices, se
             size="Weight (%)",
             title="Risk-Return Profile: Individual Volatility vs Mean Return"
         )
-        st.plotly_chart(fig_scatter, use_container_width=True)
+        st.plotly_chart(fig_scatter, width="stretch")
     
     st.caption(f"**Data Window:** Calculation based on returns from {prices.index[0].strftime('%Y-%m-%d')} to {prices.index[-1].strftime('%Y-%m-%d')}.")
 
@@ -147,7 +155,7 @@ with st.spinner("Synchronizing Market Data..."):
 tab1, tab2, tab3 = st.tabs(["변동성 비교", "KR Market", "US Market"])
 
 with tab1:
-    st.header("Comparison: KR vs US Volatility")
+    st.header("KR vs US Superstar VIX")
     
     if kr_df is not None and us_df is not None:
         # Merge for combined plot
@@ -160,19 +168,19 @@ with tab1:
             range_y=[0, 100],
             color_discrete_map={"KR": "#EF553B", "US": "#636EFA"}
         )
-        st.plotly_chart(fig_combined, use_container_width=True)
+        st.plotly_chart(fig_combined, width="stretch")
     else:
         st.warning("Could not generate combined chart. Data synchronization issue.")
 
     st.divider()
     st.subheader("Methodology")
     
-    st.markdown("""
+    st.markdown(r"""
     ### 1. Individual Volatility: Recursive EWMA
     Each asset's volatility is calculated using a **Recursive Exponentially Weighted Moving Average (EWMA)**. 
     Unlike simple historical volatility, EWMA gives more weight to recent data, allowing the index to react faster to sudden market shifts.
     
-    $$ \\sigma_{i,t}^2 = \\lambda \\sigma_{i,t-1}^2 + (1 - \\lambda) r_{i,t-1}^2 $$
+    $$ \sigma_{i,t}^2 = \lambda \sigma_{i,t-1}^2 + (1 - \lambda) r_{i,t-1}^2 $$
     
     - **$\lambda$ (Decay Factor):** 0.94 (standard for daily data).
     - **Initialization:** We use the first 29 days of the window to calculate a baseline sample variance.
@@ -186,7 +194,7 @@ with tab1:
     The final index is aggregated by weighting each asset by its relative **Market Capitalization**. 
     This ensures the VI represents the "Superstar" market as a whole, rather than just an average of tickers.
     
-    $$ \\sigma_{port, t} = \\sqrt{w_t^T (D_t R_t D_t) w_t} $$
+    $$ \sigma_{port, t} = \sqrt{w_t^T (D_t R_t D_t) w_t} $$
     
     Where $D_t$ is a diagonal matrix of EWMA standard deviations.
     
