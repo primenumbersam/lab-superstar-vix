@@ -67,15 +67,39 @@ def fetch_us_prices(start_date="2025-01-01"):
         return pd.DataFrame()
     return pd.concat(df_list, axis=1).dropna()
 
+KR_STATIC_MARKET_CAPS = {
+    '삼성전자': 400_000_000_000_000.0,
+    'SK하이닉스': 120_000_000_000_000.0,
+    'LG에너지솔루션': 80_000_000_000_000.0,
+    '삼성전기': 10_000_000_000_000.0,
+    '현대차': 50_000_000_000_000.0,
+    '한화에어로스페이스': 15_000_000_000_000.0,
+    '두산에너빌리티': 12_000_000_000_000.0,
+    '한미반도체': 10_000_000_000_000.0,
+    'LG화학': 25_000_000_000_000.0,
+    '고려아연': 15_000_000_000_000.0,
+    '삼성생명': 15_000_000_000_000.0,
+    '삼성물산': 25_000_000_000_000.0,
+    '미래에셋증권': 4_000_000_000_000.0,
+    '현대건설': 3_500_000_000_000.0,
+    '한국전력': 13_000_000_000_000.0
+}
+
 def fetch_kr_market_caps():
-    krx = fdr.StockListing('KRX')
     mcaps = {}
     for name, code in KR_TICKERS.items():
-        row = krx[krx['Code'] == code]
-        if not row.empty and 'Marcap' in row.columns:
-            mcaps[name] = float(row['Marcap'].iloc[0])
-        else:
-            mcaps[name] = 1.0 # Fallback
+        fallback_val = KR_STATIC_MARKET_CAPS.get(name, 1.0)
+        try:
+            ticker_yf = f"{code}.KS"
+            info = yf.Ticker(ticker_yf).info
+            mcap = info.get('marketCap')
+            if mcap:
+                mcaps[name] = float(mcap)
+            else:
+                mcaps[name] = fallback_val
+        except Exception as e:
+            print(f"Error fetching KR market cap for {name} ({code}): {e}")
+            mcaps[name] = fallback_val
     return mcaps
 
 def fetch_us_market_caps():
