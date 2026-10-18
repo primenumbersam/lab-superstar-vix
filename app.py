@@ -103,9 +103,13 @@ def process_market(market_name, df_cvi, mcaps, current_vars, returns, prices, se
     # Calculate Mean Annualized Returns (252 days)
     mean_returns = returns.mean() * 252 * 100
     
+    start_date = returns.index[0].strftime('%Y-%m-%d')
+    end_date = returns.index[-1].strftime('%Y-%m-%d')
+    trading_days = len(returns)
+    
     chart_data = []
     for ticker, mcap in mcaps.items():
-        weight = mcap / total_mcap
+        weight = (mcap / total_mcap) * 100
         volatility = latest_vols.get(ticker, 0)
         mean_ret = mean_returns.get(ticker, 0)
         sector = sector_dict.get(ticker, "Unknown")
@@ -113,22 +117,28 @@ def process_market(market_name, df_cvi, mcaps, current_vars, returns, prices, se
             "Ticker": ticker,
             "Sector": sector,
             "Market Cap": mcap,
-            "Weight (%)": weight * 100,
-            "Volatility (%)": volatility,
-            "Mean Return (%)": mean_ret
+            "Relative Market Cap Weight (%)": weight,
+            "Annualized Volatility (%)": volatility,
+            "Annualized Mean Return (%)": mean_ret
         })
     df_chart = pd.DataFrame(chart_data)
     
     col1, col2 = st.columns(2)
     with col1:
-        # Treemap
+        # Treemap: Size = Relative Cap Weight, Color = Annualized Mean Return
         fig_tree = px.treemap(
             df_chart, 
             path=[px.Constant(f"{market_name} Market"), "Sector", "Ticker"], 
-            values="Market Cap",
-            color="Weight (%)",
-            color_continuous_scale="Blues",
-            title="Sector & Market Cap Treemap"
+            values="Relative Market Cap Weight (%)",
+            color="Annualized Mean Return (%)",
+            color_continuous_scale="RdYlGn",
+            color_continuous_midpoint=0.0,
+            hover_data={
+                "Relative Market Cap Weight (%)": ":.2f",
+                "Annualized Mean Return (%)": ":.2f",
+                "Annualized Volatility (%)": ":.2f"
+            },
+            title=f"{market_name} Treemap: Cap Weight (Size) & Mean Return (Color) [{start_date} ~ {end_date}]"
         )
         st.plotly_chart(fig_tree, width="stretch")
         
@@ -136,23 +146,33 @@ def process_market(market_name, df_cvi, mcaps, current_vars, returns, prices, se
         # Scatterplot: Std Dev vs Mean Return
         fig_scatter = px.scatter(
             df_chart, 
-            x="Volatility (%)", 
-            y="Mean Return (%)", 
+            x="Annualized Volatility (%)", 
+            y="Annualized Mean Return (%)", 
             color="Sector",
             hover_name="Ticker",
-            size="Weight (%)",
-            title="Risk-Return Profile: Individual Volatility vs Mean Return"
+            size="Relative Market Cap Weight (%)",
+            labels={
+                "Annualized Volatility (%)": f"Annualized Volatility (%) [As of {end_date}]",
+                "Annualized Mean Return (%)": f"Annualized Mean Return (%) [{start_date} ~ {end_date}]",
+                "Relative Market Cap Weight (%)": "Relative Cap Weight (%)"
+            },
+            title=f"Risk-Return Profile ({start_date} ~ {end_date}, {trading_days} Trading Days)"
         )
         st.plotly_chart(fig_scatter, width="stretch")
     
-    st.caption(f"**Data Window:** Calculation based on returns from {prices.index[0].strftime('%Y-%m-%d')} to {prices.index[-1].strftime('%Y-%m-%d')}.")
+    st.caption(
+        fr"**Calculation Window:** Evaluated from {start_date} to {end_date} ({trading_days} trading days). "
+        fr"Annualized Mean Return represents average log return scaled by 252. "
+        fr"Annualized Volatility is calculated using Recursive EWMA ($\lambda=0.94$) scaled by $\sqrt{{252}}$ as of {end_date}. "
+        fr"Tile size reflects the relative market capitalization weight within the {market_name} Superstar universe."
+    )
 
 # Pre-fetching and calculating all data
 with st.spinner("Synchronizing Market Data..."):
     kr_df, kr_mcaps, kr_vars, kr_rets, kr_prices = get_cvi_data("KR", fetch_kr_prices, fetch_kr_market_caps)
     us_df, us_mcaps, us_vars, us_rets, us_prices = get_cvi_data("US", fetch_us_prices, fetch_us_market_caps)
 
-tab1, tab2, tab3 = st.tabs(["변동성 비교", "KR Market", "US Market"])
+tab1, tab2, tab3 = st.tabs(["Comparison", "KR Market", "US Market"])
 
 with tab1:
     st.header("KR vs US Superstar VIX")
