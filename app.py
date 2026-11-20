@@ -2,8 +2,14 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from state_manager import StateManager
-from data_pipeline import fetch_kr_prices, fetch_us_prices, fetch_kr_market_caps, fetch_us_market_caps, KR_SECTORS, US_SECTORS
+from data_pipeline import (
+    fetch_kr_prices, fetch_us_prices, fetch_kr_market_caps, fetch_us_market_caps,
+    fetch_vkospi, fetch_vix, fetch_kospi_index, fetch_nasdaq100_index,
+    KR_SECTORS, US_SECTORS
+)
 from ewma_model import calculate_returns, initialize_variance, update_ewma, compute_ledoit_wolf_correlation, calculate_portfolio_volatility
 
 # Page Layout configuration
@@ -69,6 +75,20 @@ def get_cvi_data(market_name, _fetch_prices_func, _fetch_mcaps_func):
     df_cvi = pd.DataFrame({"Date": dates, market_name: cv_index})
     return df_cvi, mcaps, current_vars, returns, prices
 
+@st.cache_data(show_spinner=False)
+def get_implied_vol(market_name):
+    if market_name == "KR":
+        return fetch_vkospi("2025-01-01")
+    return fetch_vix("2025-01-01")
+
+
+@st.cache_data(show_spinner=False)
+def get_benchmark_index(market_name):
+    if market_name == "KR":
+        return fetch_kospi_index("2025-01-01")
+    return fetch_nasdaq100_index("2025-01-01")
+
+
 def process_market(market_name, df_cvi, mcaps, current_vars, returns, prices, sector_dict):
     st.header(f"{market_name} Superstar VIX")
     
@@ -80,15 +100,73 @@ def process_market(market_name, df_cvi, mcaps, current_vars, returns, prices, se
     latest_cvi = df_cvi[market_name].iloc[-1]
     st.metric(label=f"Latest {market_name} CVI", value=f"{latest_cvi:.2f}")
     
-    # Time series chart
-    fig = px.line(
-        df_cvi, 
-        x="Date", 
-        y=market_name, 
-        title=f"{market_name} Customized Volatility Index (CVI)",
-        range_y=[0, 100],
-        labels={market_name: "CVI Index"}
+    # Time series chart (Dual axis: Left = Benchmark Index, Right = CVI & Official Implied Vol)
+    iv_name = "VKOSPI" if market_name == "KR" else "VIX"
+    bench_name = "KOSPI" if market_name == "KR" else "NASDAQ 100"
+    market_color = "#EF553B" if market_name == "KR" else "#636EFA"
+    bench_color = "#FECB52"
+    
+    iv_series = get_implied_vol(market_name)
+    bench_series = get_benchmark_index(market_name)
+    
+    df_plot = df_cvi.copy()
+    df_plot["Date"] = pd.to_datetime(df_plot["Date"]).dt.tz_localize(None).dt.normalize()
+    if not iv_series.empty:
+        df_plot = df_plot.merge(
+            iv_series.rename_axis("Date").reset_index(),
+            on="Date",
+            how="left",
+        )
+    if not bench_series.empty:
+        df_plot = df_plot.merge(
+            bench_series.rename_axis("Date").reset_index(),
+            on="Date",
+            how="left",
+        )
+    
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    if bench_name in df_plot.columns and not df_plot[bench_name].dropna().empty:
+        fig.add_trace(
+            go.Scatter(
+                x=df_plot["Date"],
+                y=df_plot[bench_name],
+                name=bench_name,
+                mode="lines",
+                line=dict(color=bench_color),
+                connectgaps=True,
+            ),
+            secondary_y=False,
+        )
+    fig.add_trace(
+        go.Scatter(
+            x=df_plot["Date"],
+            y=df_plot[market_name],
+            name=f"{market_name} CVI",
+            mode="lines",
+            line=dict(color=market_color),
+        ),
+        secondary_y=True,
     )
+    if iv_name in df_plot.columns and not df_plot[iv_name].dropna().empty:
+        fig.add_trace(
+            go.Scatter(
+                x=df_plot["Date"],
+                y=df_plot[iv_name],
+                name=iv_name,
+                mode="lines",
+                line=dict(color=market_color, dash="dot"),
+                connectgaps=True,
+            ),
+            secondary_y=True,
+        )
+    fig.update_layout(
+        title=f"{market_name} CVI & {iv_name} vs {bench_name}",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    fig.update_xaxes(title_text="Date")
+    fig.update_yaxes(title_text=f"{bench_name} Index", secondary_y=False)
+    fig.update_yaxes(title_text=f"Volatility ({market_name} CVI / {iv_name})", range=[0, 100], secondary_y=True)
     st.plotly_chart(fig, width="stretch")
     
     # -----------------------------------
@@ -178,15 +256,41 @@ with tab1:
     st.header("KR vs US Superstar VIX")
     
     if kr_df is not None and us_df is not None:
-        # Merge for combined plot
+        # Merge for combined plot (single axis: KR CVI, VKOSPI, US CVI, VIX)
         combined_df = pd.merge(kr_df, us_df, on="Date", how="inner")
-        fig_combined = px.line(
-            combined_df, 
-            x="Date", 
-            y=["KR", "US"], 
+        combined_df["Date"] = pd.to_datetime(combined_df["Date"]).dt.tz_localize(None).dt.normalize()
+        vkospi_series = get_implied_vol("KR")
+        vix_series = get_implied_vol("US")
+        if not vkospi_series.empty:
+            combined_df = combined_df.merge(vkospi_series.rename_axis("Date").reset_index(), on="Date", how="left")
+        if not vix_series.empty:
+            combined_df = combined_df.merge(vix_series.rename_axis("Date").reset_index(), on="Date", how="left")
+
+        fig_combined = go.Figure()
+        fig_combined.add_trace(go.Scatter(
+            x=combined_df["Date"], y=combined_df["KR"],
+            name="KR CVI", mode="lines", line=dict(color="#EF553B"),
+        ))
+        if "VKOSPI" in combined_df.columns and not combined_df["VKOSPI"].dropna().empty:
+            fig_combined.add_trace(go.Scatter(
+                x=combined_df["Date"], y=combined_df["VKOSPI"],
+                name="VKOSPI", mode="lines", line=dict(color="#EF553B", dash="dot"), connectgaps=True,
+            ))
+        fig_combined.add_trace(go.Scatter(
+            x=combined_df["Date"], y=combined_df["US"],
+            name="US CVI", mode="lines", line=dict(color="#636EFA"),
+        ))
+        if "VIX" in combined_df.columns and not combined_df["VIX"].dropna().empty:
+            fig_combined.add_trace(go.Scatter(
+                x=combined_df["Date"], y=combined_df["VIX"],
+                name="VIX", mode="lines", line=dict(color="#636EFA", dash="dot"), connectgaps=True,
+            ))
+        fig_combined.update_layout(
             title="Standardized Superstar VI: KR vs US Stocks",
-            range_y=[0, 100],
-            color_discrete_map={"KR": "#EF553B", "US": "#636EFA"}
+            hovermode="x unified",
+            yaxis=dict(title="Volatility Index", range=[0, 100]),
+            xaxis=dict(title="Date"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         )
         st.plotly_chart(fig_combined, width="stretch")
     else:

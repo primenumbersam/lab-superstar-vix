@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from curl_cffi import requests as cffi_requests
 
 KR_SECTORS = {
     '삼성전자': '전기 전자', 'SK하이닉스': '전기 전자', 'LG에너지솔루션': '전기 전자', '삼성전기': '전기 전자',
@@ -111,3 +112,81 @@ def fetch_us_market_caps():
         except:
             mcaps[ticker] = 1.0
     return mcaps
+
+
+def fetch_vkospi(start_date="2025-01-01"):
+    """Fetch daily VKOSPI close series from Investing.com."""
+    try:
+        end_date = datetime.today().strftime("%Y-%m-%d")
+        resp = cffi_requests.get(
+            "https://api.investing.com/api/financialdata/historical/956761",
+            impersonate="chrome",
+            headers={"domain-id": "www"},
+            params={
+                "start-date": start_date,
+                "end-date": end_date,
+                "time-frame": "Daily",
+                "add-missing-rows": "false",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        rows = resp.json().get("data") or []
+        if not rows:
+            return pd.Series(dtype=float, name="VKOSPI")
+        df = pd.DataFrame(rows)
+        dates = pd.to_datetime(df["rowDateTimestamp"]).dt.tz_localize(None).dt.normalize()
+        values = pd.to_numeric(df["last_close"].astype(str).str.replace(",", ""), errors="coerce")
+        series = pd.Series(values.values, index=dates, name="VKOSPI").dropna().sort_index()
+        return series[~series.index.duplicated(keep="last")]
+    except Exception as e:
+        print(f"Error fetching VKOSPI: {e}")
+        return pd.Series(dtype=float, name="VKOSPI")
+
+
+def fetch_vix(start_date="2025-01-01"):
+    """Fetch daily CBOE VIX (^VIX) close series from Yahoo Finance."""
+    try:
+        df = yf.download("^VIX", start=start_date, progress=False)
+        if df.empty or "Close" not in df.columns:
+            return pd.Series(dtype=float, name="VIX")
+        close_col = df["Close"]
+        if isinstance(close_col, pd.DataFrame):
+            close_col = close_col.iloc[:, 0]
+        dates = pd.to_datetime(close_col.index).tz_localize(None).normalize()
+        series = pd.Series(close_col.values, index=dates, name="VIX").dropna().sort_index()
+        return series[~series.index.duplicated(keep="last")]
+    except Exception as e:
+        print(f"Error fetching VIX: {e}")
+        return pd.Series(dtype=float, name="VIX")
+
+
+def fetch_kospi_index(start_date="2025-01-01"):
+    """Fetch daily KOSPI index (KS11) close series."""
+    try:
+        df = fdr.DataReader("KS11", start_date)
+        if df.empty or "Close" not in df.columns:
+            return pd.Series(dtype=float, name="KOSPI")
+        dates = pd.to_datetime(df.index).tz_localize(None).normalize()
+        series = pd.Series(df["Close"].values, index=dates, name="KOSPI").dropna().sort_index()
+        return series[~series.index.duplicated(keep="last")]
+    except Exception as e:
+        print(f"Error fetching KOSPI: {e}")
+        return pd.Series(dtype=float, name="KOSPI")
+
+
+def fetch_nasdaq100_index(start_date="2025-01-01"):
+    """Fetch daily NASDAQ 100 index (^NDX) close series."""
+    try:
+        df = yf.download("^NDX", start=start_date, progress=False)
+        if df.empty or "Close" not in df.columns:
+            return pd.Series(dtype=float, name="NASDAQ 100")
+        close_col = df["Close"]
+        if isinstance(close_col, pd.DataFrame):
+            close_col = close_col.iloc[:, 0]
+        dates = pd.to_datetime(close_col.index).tz_localize(None).normalize()
+        series = pd.Series(close_col.values, index=dates, name="NASDAQ 100").dropna().sort_index()
+        return series[~series.index.duplicated(keep="last")]
+    except Exception as e:
+        print(f"Error fetching NASDAQ 100: {e}")
+        return pd.Series(dtype=float, name="NASDAQ 100")
